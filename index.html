@@ -1,136 +1,112 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101828">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="description" content="A beautiful, mobile-friendly reminder manager for GitHub Pages.">
-  <title>Remindly — Smart Reminder Manager</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="ReminderFlow — simple, generic reminders with Google Calendar support.">
+<title>ReminderFlow — Reminders</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">✓</div>
-        <div>
-          <div class="brand-name">Remindly</div>
-          <div class="brand-subtitle">Simple reminders. Zero clutter.</div>
-        </div>
-      </div>
-      <div class="top-actions">
-        <button class="btn btn-ghost" id="importBtn" type="button">↥ <span>Import</span></button>
-        <button class="btn btn-ghost" id="exportBtn" type="button">↧ <span>Export</span></button>
-        <input id="fileInput" type="file" accept=".json,application/json" hidden aria-label="Choose Remindly backup file">
-      </div>
-    </header>
+<div id="app" class="app">
+<header class="top">
+  <div class="brand">
+    <div class="logo">✓</div>
+    <div><b>ReminderFlow</b><small>Simple Reminder Command Center</small></div>
+  </div>
+  <div class="top-actions">
+    <button class="secondary" id="backup">Export</button>
+    <label class="secondary import">Import<input id="import" type="file" accept=".json"></label>
+    <button id="bell" class="icon-btn" title="Enable browser notifications" aria-label="Enable browser notifications">🔔</button>
+  </div>
+</header>
 
-    <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <span class="eyebrow">YOUR PERSONAL REMINDER HUB</span>
-          <h1>Remember what matters.</h1>
-          <p>Create, organize and share reminders in seconds. Everything is stored securely in this browser and can be exported whenever you want.</p>
-          <button class="btn btn-primary hero-cta" id="focusFormBtn" type="button">＋ Create reminder</button>
-        </div>
-        <div class="hero-visual" aria-hidden="true">
-          <div class="orbit orbit-1"></div>
-          <div class="orbit orbit-2"></div>
-          <div class="hero-clock">⏰</div>
-          <div class="float-card float-card-a">✓ On time</div>
-          <div class="float-card float-card-b">📅 Scheduled</div>
-        </div>
-      </section>
+<section class="hero">
+  <div>
+    <label>REMINDER INTELLIGENCE</label>
+    <h1>Never miss<br>a <em>reminder.</em></h1>
+    <p>Create a reminder using only its name, description and date. Save it directly to Google Calendar whenever you need it.</p>
+    <div class="actions"><button class="primary" id="add">＋ Add Reminder</button></div>
+  </div>
+  <div class="visual"><div class="orb"><strong id="heroTotal">0</strong><span>ACTIVE<br>REMINDERS</span></div></div>
+</section>
 
-      <section class="stats-grid" aria-label="Reminder statistics">
-        <article class="stat-card">
-          <div class="stat-icon">📌</div>
-          <div><span class="stat-label">Total</span><strong id="totalCount">0</strong></div>
-        </article>
-        <article class="stat-card">
-          <div class="stat-icon blue">🗓️</div>
-          <div><span class="stat-label">Upcoming</span><strong id="upcomingCount">0</strong></div>
-        </article>
-        <article class="stat-card">
-          <div class="stat-icon green">✓</div>
-          <div><span class="stat-label">Completed</span><strong id="completedCount">0</strong></div>
-        </article>
-        <article class="stat-card">
-          <div class="stat-icon orange">⚡</div>
-          <div><span class="stat-label">Due soon</span><strong id="soonCount">0</strong></div>
-        </article>
-      </section>
+<section class="stats">
+  <article><span>OVERDUE</span><b id="overdue">0</b><small>Needs attention</small></article>
+  <article class="amber"><span>TODAY</span><b id="today">0</b><small>Due today</small></article>
+  <article><span>7 DAYS</span><b id="seven">0</b><small>Coming soon</small></article>
+  <article class="teal"><span>30 DAYS</span><b id="thirty">0</b><small>Plan ahead</small></article>
+</section>
 
-      <section class="workspace">
-        <div class="panel form-panel" id="formPanel">
-          <div class="panel-heading">
-            <div>
-              <span class="section-kicker">CREATE / UPDATE</span>
-              <h2 id="formTitle">New reminder</h2>
-            </div>
-            <button class="icon-btn" id="clearFormBtn" type="button" title="Clear form" aria-label="Clear form">↺</button>
-          </div>
+<section class="morning">
+  <i></i>
+  <div><b>☀ Action Center</b><p id="morning">Your reminder queue will appear here.</p></div>
+  <button id="priority" class="secondary">View Priority</button>
+</section>
 
-          <form id="reminderForm">
-            <input type="hidden" id="reminderId">
-            <label>
-              Reminder name
-              <input id="name" type="text" maxlength="120" placeholder="e.g. Renew car insurance" required>
-            </label>
-            <label>
-              Description
-              <textarea id="description" maxlength="1000" rows="5" placeholder="Add useful details, phone numbers, notes..."></textarea>
-            </label>
-            <div class="form-row">
-              <label>
-                Reminder date
-                <input id="date" type="date" required>
-              </label>
-              <label>
-                Time
-                <input id="time" type="time" value="09:00">
-              </label>
-            </div>
-            <div class="form-hint">💡 Data stays in your browser. Use <b>Export</b> to create a backup you can import later.</div>
-            <div class="form-actions">
-              <button class="btn btn-primary" type="submit" id="saveBtn">Save reminder</button>
-              <button class="btn btn-secondary" type="button" id="cancelEditBtn" hidden>Cancel edit</button>
-            </div>
-          </form>
-        </div>
+<section class="bar">
+  <div><label>YOUR REMINDERS</label><h2>Reminder Pipeline</h2></div>
+  <div class="filters">
+    <input id="search" placeholder="Search reminders…">
+    <select id="filter">
+      <option value="all">All</option>
+      <option value="overdue">Overdue</option>
+      <option value="today">Today</option>
+      <option value="7">Next 7 days</option>
+      <option value="30">Next 30 days</option>
+    </select>
+    <button class="primary" id="add2">＋ Add</button>
+  </div>
+</section>
 
-        <div class="panel list-panel">
-          <div class="panel-heading list-heading">
-            <div>
-              <span class="section-kicker">YOUR SCHEDULE</span>
-              <h2>Reminders <span id="listCount">0</span></h2>
-            </div>
-            <div class="filters">
-              <button class="filter active" data-filter="all" type="button">All</button>
-              <button class="filter" data-filter="upcoming" type="button">Upcoming</button>
-              <button class="filter" data-filter="completed" type="button">Done</button>
-            </div>
-          </div>
-          <div id="emptyState" class="empty-state">
-            <div class="empty-illustration">🗓️</div>
-            <h3>No reminders yet</h3>
-            <p>Your next important task deserves a place here.</p>
-            <button class="btn btn-primary" type="button" id="emptyCreateBtn">Create your first reminder</button>
-          </div>
-          <div id="reminderList" class="reminder-list"></div>
-        </div>
-      </section>
-    </main>
+<section id="list"></section>
+<section id="empty" class="empty">
+  <div>✦</div><h3>No reminders yet</h3>
+  <p>Add your first reminder to build your reminder pipeline.</p>
+  <button class="primary" id="add3">Add First Reminder</button>
+</section>
 
-    <footer>
-      <span>Remindly</span><span>•</span><span>Works on GitHub Pages</span><span>•</span><span>Offline-friendly</span>
-    </footer>
+<section class="note">🔐 <span><b>Private by design.</b> Reminder records stay in this browser. Google Calendar opens only when you choose to save a reminder.</span></section>
+<footer>ReminderFlow · Mobile & desktop ready</footer>
+</div>
+
+<dialog id="dlg">
+<form id="form" class="modal">
+  <header>
+    <div><label>REMINDER RECORD</label><h2 id="modalTitle">Add Reminder</h2></div>
+    <button type="button" id="x" class="close">×</button>
+  </header>
+  <input type="hidden" id="id">
+
+  <div class="grid">
+    <label>Reminder name
+      <input id="name" required maxlength="120" placeholder="Team meeting">
+    </label>
+    <label>Reminder date
+      <input id="date" type="date" required>
+    </label>
+    <label class="description-field">Description
+      <textarea id="description" maxlength="500" placeholder="Add any details you want to remember"></textarea>
+      <small id="descCount">0/500 characters</small>
+    </label>
   </div>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="script.js"></script>
+  <div class="preview">
+    <small>CALENDAR PREVIEW</small>
+    <p id="preview"></p>
+  </div>
+
+  <div class="modalfoot">
+    <button type="button" id="del" class="danger hidden">Delete</button>
+    <div>
+      <button type="button" id="cancel" class="secondary">Cancel</button>
+      <button type="button" id="saveCalendar" class="secondary">Save to Calendar</button>
+      <button class="primary">Save Reminder</button>
+    </div>
+  </div>
+</form>
+</dialog>
+<script src="script.js"></script>
 </body>
 </html>

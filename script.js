@@ -1,369 +1,261 @@
-(() => {
-  "use strict";
+'use strict';
 
-  const STORAGE_KEY = "remindly.v1";
-  let reminders = loadReminders();
-  let activeFilter = "all";
+const KEY = 'reminderflow_data_v1';
+let data = loadData();
 
-  const $ = (id) => document.getElementById(id);
-  const form = $("reminderForm");
-  const nameInput = $("name");
-  const descInput = $("description");
-  const dateInput = $("date");
-  const timeInput = $("time");
-  const idInput = $("reminderId");
-  const list = $("reminderList");
-  const empty = $("emptyState");
-  const toast = $("toast");
+const $ = id => document.getElementById(id);
+const today = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
 
-  function uid() {
-    try {
-      if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
-    } catch (_) {}
-    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+function loadData(){
+  try {
+    const x = JSON.parse(localStorage.getItem(KEY) || '[]');
+    return Array.isArray(x) ? x : [];
+  } catch { return []; }
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(data)); render(); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function days(s){ return Math.ceil((new Date(s+'T00:00:00') - today()) / 86400000); }
+function prettyDate(s){ return new Date(s+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); }
+function initials(n){ return (n||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
+function status(d){
+  if(d<0) return ['overdue', Math.abs(d)+'d overdue'];
+  if(d===0) return ['today','Due today'];
+  if(d<=7) return ['soon','Due in '+d+'d'];
+  return ['later','Due in '+d+'d'];
+}
+function escapeHtml(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+
+/* Google Calendar event: creates an all-day event because the app stores only a reminder date. */
+function calendarUrl(r){
+  const [y,m,d] = r.date.split('-').map(Number);
+  const pad = n => String(n).padStart(2,'0');
+  const next = new Date(y,m-1,d+1);
+  const end = `${next.getFullYear()}${pad(next.getMonth()+1)}${pad(next.getDate())}`;
+  const start = `${y}${pad(m)}${pad(d)}`;
+  const u = new URL('https://calendar.google.com/calendar/render');
+  u.searchParams.set('action','TEMPLATE');
+  u.searchParams.set('text', r.name);
+  u.searchParams.set('dates', `${start}/${end}`);
+  u.searchParams.set('details', r.description || '');
+  return u.toString();
+}
+function openExternal(url){
+  const w = window.open(url,'_blank','noopener,noreferrer');
+  if(!w) location.href = url;
+}
+function openCalendar(r){ openExternal(calendarUrl(r)); }
+
+function render(){
+  const all = data.filter(x=>x && x.name && x.date);
+  const q = ($('search').value||'').toLowerCase().trim();
+  const f = $('filter').value;
+
+  const overdue = all.filter(x=>days(x.date)<0).length;
+  const t = all.filter(x=>days(x.date)===0).length;
+  const seven = all.filter(x=>days(x.date)>=0&&days(x.date)<=7).length;
+  const thirty = all.filter(x=>days(x.date)>=0&&days(x.date)<=30).length;
+
+  $('overdue').textContent=overdue;
+  $('today').textContent=t;
+  $('seven').textContent=seven;
+  $('thirty').textContent=thirty;
+  $('heroTotal').textContent=all.length;
+
+  $('morning').textContent =
+    overdue ? `${overdue} overdue reminder${overdue>1?'s':''} need attention first.` :
+    t ? `${t} reminder${t>1?'s':''} due today.` :
+    seven ? `${seven} reminder${seven>1?'s':''} coming up in the next 7 days.` :
+    'No urgent reminders — your queue is clear.';
+
+  const list = all
+    .filter(r => `${r.name} ${r.description||''}`.toLowerCase().includes(q))
+    .filter(r => {
+      const d=days(r.date);
+      return f==='all' ||
+        (f==='overdue'&&d<0) ||
+        (f==='today'&&d===0) ||
+        (f==='7'&&d>=0&&d<=7) ||
+        (f==='30'&&d>=0&&d<=30);
+    })
+    .sort((a,b)=>new Date(a.date)-new Date(b.date));
+
+  $('empty').style.display=list.length?'none':'block';
+
+  $('list').innerHTML=list.map(r=>{
+    const [s,b]=status(days(r.date));
+    return `<article class="card">
+      <div class="reminder">
+        <div class="avatar">${escapeHtml(initials(r.name))}</div>
+        <div><b>${escapeHtml(r.name)}</b><span class="muted">Reminder</span></div>
+      </div>
+      <div class="description-col">
+        <span class="column-label">DESCRIPTION</span>
+        <span class="description ${r.description?'':'empty-description'}">${r.description?escapeHtml(r.description):'—'}</span>
+      </div>
+      <div class="status">
+        <b>${escapeHtml(prettyDate(r.date))}</b>
+        <span class="badge ${s}">${escapeHtml(b)}</span>
+      </div>
+      <div class="cardactions">
+        <button class="mini cal" data-action="cal" data-id="${r.id}" title="Save to Google Calendar" aria-label="Save to Google Calendar">📅</button>
+        <button class="mini" data-action="edit" data-id="${r.id}" title="Edit reminder" aria-label="Edit reminder">✎</button>
+        <button class="mini delete-mini" data-action="delete" data-id="${r.id}" title="Delete reminder" aria-label="Delete reminder">🗑</button>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+function deleteReminder(id){
+  const r=data.find(x=>x.id===id);
+  if(!r)return;
+  if(confirm(`Delete "${r.name}"? This cannot be undone.`)){
+    data=data.filter(x=>x.id!==id);
+    save();
   }
+}
 
-  function loadReminders() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const data = raw ? JSON.parse(raw) : [];
-      return Array.isArray(data) ? data : [];
-    } catch (_) {
-      return [];
-    }
+function openForm(r=null){
+  $('form').reset();
+  $('id').value=r?.id||'';
+  $('modalTitle').textContent=r?'Edit Reminder':'Add Reminder';
+  $('name').value=r?.name||'';
+  $('date').value=r?.date||new Date().toISOString().slice(0,10);
+  $('description').value=r?.description||'';
+  $('del').classList.toggle('hidden',!r);
+  updatePreview();
+  $('dlg').showModal();
+  $('name').focus();
+}
+
+function updatePreview(){
+  const name=$('name').value.trim()||'Reminder';
+  const date=$('date').value||new Date().toISOString().slice(0,10);
+  const desc=$('description').value.trim();
+  $('preview').textContent=`${name} — ${prettyDate(date)}${desc?' · '+desc:''}`;
+  $('descCount').textContent=`${$('description').value.length}/500 characters`;
+}
+
+function downloadBlob(text,name,type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type}));
+  a.download=name;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),500);
+}
+
+function csvExport(){
+  const q=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const head=['Reminder Name','Description','Reminder Date'];
+  downloadBlob(
+    [head.map(q).join(','),...data.map(r=>[r.name,r.description||'',r.date].map(q).join(','))].join('\n'),
+    'reminderflow-reminders.csv','text/csv'
+  );
+}
+
+function backup(){ downloadBlob(JSON.stringify(data,null,2),'reminderflow-backup.json','application/json'); }
+
+['add','add2','add3'].forEach(id=>$(id).addEventListener('click',()=>openForm()));
+$('cancel').addEventListener('click',()=>$('dlg').close());
+$('x').addEventListener('click',()=>$('dlg').close());
+
+['name','date','description'].forEach(id=>$(id).addEventListener('input',updatePreview));
+
+$('form').addEventListener('submit',e=>{
+  e.preventDefault();
+  const id=$('id').value;
+  const r={
+    id:id||uid(),
+    name:$('name').value.trim(),
+    description:$('description').value.trim(),
+    date:$('date').value
+  };
+  if(!r.name||!r.date)return;
+  const i=data.findIndex(x=>x.id===id);
+  if(i>=0)data[i]=r; else data.push(r);
+  save();
+  $('dlg').close();
+});
+
+$('saveCalendar').addEventListener('click',()=>{
+  const r={
+    name:$('name').value.trim(),
+    description:$('description').value.trim(),
+    date:$('date').value
+  };
+  if(!r.name||!r.date){
+    alert('Please enter a reminder name and date.');
+    return;
   }
+  openCalendar(r);
+});
 
-  function saveAll() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reminders));
-      render();
-      return true;
-    } catch (_) {
-      showToast("Storage is unavailable in this browser");
-      return false;
-    }
+$('del').addEventListener('click',()=>{
+  const id=$('id').value;
+  if(id && confirm('Delete this reminder?')){
+    data=data.filter(x=>x.id!==id);
+    save();
+    $('dlg').close();
   }
+});
 
-  function localISODate(date = new Date()) {
-    const d = new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  }
+$('list').addEventListener('click',e=>{
+  const b=e.target.closest('[data-action]');
+  if(!b)return;
+  const r=data.find(x=>x.id===b.dataset.id);
+  if(!r)return;
+  if(b.dataset.action==='cal')openCalendar(r);
+  if(b.dataset.action==='edit')openForm(r);
+  if(b.dataset.action==='delete')deleteReminder(r.id);
+});
 
-  function parseReminder(r) {
-    const d = new Date(`${r.date}T${r.time || "09:00"}:00`);
-    return Number.isNaN(d.getTime()) ? new Date(0) : d;
-  }
+$('search').addEventListener('input',render);
+$('filter').addEventListener('change',render);
 
-  function formatDate(r) {
-    return new Intl.DateTimeFormat(undefined, {
-      weekday:"short", day:"numeric", month:"short",
-      ...(r.time ? {hour:"numeric", minute:"2-digit"} : {})
-    }).format(parseReminder(r));
-  }
-
-  function dayDiff(r) {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const d = parseReminder(r);
-    d.setHours(0,0,0,0);
-    return Math.round((d - today) / 86400000);
-  }
-
-  function dateClass(r) {
-    const diff = dayDiff(r);
-    if (diff < 0 && !r.completed) return "overdue";
-    if (diff === 0) return "today";
-    if (diff >= 0 && diff <= 3) return "soon";
-    return "";
-  }
-
-  function dateLabel(r) {
-    const diff = dayDiff(r);
-    if (r.completed) return `✓ ${formatDate(r)}`;
-    if (diff < 0) return `⚠ Overdue · ${formatDate(r)}`;
-    if (diff === 0) return `● Today · ${formatDate(r)}`;
-    if (diff === 1) return `Tomorrow · ${formatDate(r)}`;
-    return `📅 ${formatDate(r)}`;
-  }
-
-  function escapeHTML(value = "") {
-    return String(value).replace(/[&<>"']/g, c => ({
-      "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"
-    }[c]));
-  }
-
-  function filtered() {
-    let data = [...reminders];
-    if (activeFilter === "upcoming") data = data.filter(r => !r.completed);
-    if (activeFilter === "completed") data = data.filter(r => r.completed);
-    return data.sort((a,b) => parseReminder(a) - parseReminder(b));
-  }
-
-  function render() {
-    const now = new Date();
-    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    $("totalCount").textContent = reminders.length;
-    $("upcomingCount").textContent = reminders.filter(r => !r.completed && parseReminder(r) >= startToday).length;
-    $("completedCount").textContent = reminders.filter(r => r.completed).length;
-    $("soonCount").textContent = reminders.filter(r => !r.completed && dayDiff(r) >= 0 && dayDiff(r) <= 3).length;
-
-    const data = filtered();
-    $("listCount").textContent = data.length;
-    empty.hidden = data.length > 0;
-    list.innerHTML = data.map(cardHTML).join("");
-  }
-
-  function cardHTML(r) {
-    return `
-      <article class="reminder ${r.completed ? "completed" : ""}" data-id="${escapeHTML(r.id)}">
-        <button class="check" data-action="toggle" type="button" title="${r.completed ? "Mark active" : "Mark completed"}" aria-label="${r.completed ? "Mark active" : "Mark completed"}">${r.completed ? "✓" : ""}</button>
-        <div class="reminder-main">
-          <div class="reminder-title">${escapeHTML(r.name)}</div>
-          ${r.description ? `<div class="reminder-description">${escapeHTML(r.description)}</div>` : ""}
-          <span class="date-chip ${dateClass(r)}">${escapeHTML(dateLabel(r))}</span>
-        </div>
-        <div class="reminder-actions">
-          <button class="mini-btn whatsapp" data-action="whatsapp" type="button">WhatsApp</button>
-          <button class="mini-btn calendar" data-action="calendar" type="button">Calendar</button>
-          <button class="mini-btn" data-action="edit" type="button">Edit</button>
-          <button class="mini-btn delete" data-action="delete" type="button">Delete</button>
-        </div>
-      </article>`;
-  }
-
-  function resetForm() {
-    form.reset();
-    idInput.value = "";
-    timeInput.value = "09:00";
-    dateInput.value = localISODate();
-    $("formTitle").textContent = "New reminder";
-    $("saveBtn").textContent = "Save reminder";
-    $("cancelEditBtn").hidden = true;
-  }
-
-  function scrollToForm() {
-    $("formPanel").scrollIntoView({behavior:"smooth", block:"start"});
-    setTimeout(() => {
-      try { nameInput.focus({preventScroll:true}); } catch (_) { nameInput.focus(); }
-    }, 350);
-  }
-
-  function editReminder(r) {
-    idInput.value = r.id;
-    nameInput.value = r.name;
-    descInput.value = r.description || "";
-    dateInput.value = r.date;
-    timeInput.value = r.time || "09:00";
-    $("formTitle").textContent = "Update reminder";
-    $("saveBtn").textContent = "Update reminder";
-    $("cancelEditBtn").hidden = false;
-    scrollToForm();
-  }
-
-  form.addEventListener("submit", e => {
-    e.preventDefault();
-    const name = nameInput.value.trim();
-    if (!name || !dateInput.value) {
-      showToast("Please enter a name and date");
-      return;
-    }
-
-    const existingId = idInput.value;
-    const previous = reminders.find(r => r.id === existingId);
-    const record = {
-      id: existingId || uid(),
-      name: name.slice(0,120),
-      description: descInput.value.trim().slice(0,1000),
-      date: dateInput.value,
-      time: timeInput.value || "09:00",
-      completed: previous ? Boolean(previous.completed) : false,
-      updatedAt: new Date().toISOString()
-    };
-
-    if (existingId) {
-      const idx = reminders.findIndex(r => r.id === existingId);
-      if (idx >= 0) reminders[idx] = record;
-      showToast("Reminder updated");
-    } else {
-      reminders.push(record);
-      showToast("Reminder saved");
-    }
-    saveAll();
-    resetForm();
-  });
-
-  list.addEventListener("click", e => {
-    const btn = e.target.closest("[data-action]");
-    if (!btn) return;
-    const card = btn.closest(".reminder");
-    const id = card?.dataset.id;
-    const r = reminders.find(x => x.id === id);
-    if (!r) return;
-
-    switch (btn.dataset.action) {
-      case "toggle":
-        r.completed = !r.completed;
-        r.updatedAt = new Date().toISOString();
-        saveAll();
-        showToast(r.completed ? "Marked completed" : "Marked active");
-        break;
-      case "edit":
-        editReminder(r);
-        break;
-      case "delete":
-        if (confirm(`Delete "${r.name}"?`)) {
-          reminders = reminders.filter(x => x.id !== id);
-          saveAll();
-          showToast("Reminder deleted");
-        }
-        break;
-      case "whatsapp":
-        shareWhatsApp(r);
-        break;
-      case "calendar":
-        addToCalendar(r);
-        break;
-    }
-  });
-
-  document.querySelectorAll(".filter").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".filter").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      activeFilter = btn.dataset.filter;
-      render();
-    });
-  });
-
-  $("clearFormBtn").addEventListener("click", resetForm);
-  $("cancelEditBtn").addEventListener("click", resetForm);
-
-  ["focusFormBtn","emptyCreateBtn"].forEach(id => {
-    $(id).addEventListener("click", () => {
-      resetForm();
-      scrollToForm();
-    });
-  });
-
-  async function exportBackup() {
-    const payload = {
-      app: "Remindly",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      reminders
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
-    const filename = `remindly-backup-${localISODate()}.json`;
-
-    // Native share is the most reliable mobile route when supported.
-    try {
-      const file = new File([blob], filename, {type:"application/json"});
-      if (navigator.share && navigator.canShare && navigator.canShare({files:[file]})) {
-        await navigator.share({title:"Remindly backup", text:"Remindly reminder backup", files:[file]});
-        showToast("Backup ready to share");
-        return;
-      }
-    } catch (err) {
-      if (err && err.name === "AbortError") return;
-    }
-
-    // Standard download fallback for desktop and browsers without file sharing.
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      a.remove();
-      URL.revokeObjectURL(url);
-    }, 1000);
-    showToast("Backup exported");
-  }
-
-  $("exportBtn").addEventListener("click", exportBackup);
-  $("importBtn").addEventListener("click", () => {
-    // Programmatic click works on modern mobile browsers when directly triggered by the tap.
-    $("fileInput").click();
-  });
-
-  $("fileInput").addEventListener("change", async e => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const incoming = Array.isArray(parsed) ? parsed : parsed && parsed.reminders;
-      if (!Array.isArray(incoming)) throw new Error("Invalid backup");
-
-      const cleaned = incoming
-        .filter(r => r && r.name && r.date)
-        .map(r => ({
-          id: r.id || uid(),
-          name: String(r.name).slice(0,120),
-          description: String(r.description || "").slice(0,1000),
-          date: /^\d{4}-\d{2}-\d{2}$/.test(String(r.date)) ? String(r.date) : localISODate(),
-          time: /^\d{2}:\d{2}$/.test(String(r.time || "09:00")) ? String(r.time || "09:00") : "09:00",
-          completed: Boolean(r.completed),
-          updatedAt: r.updatedAt || new Date().toISOString()
-        }));
-
-      const map = new Map(reminders.map(r => [r.id, r]));
-      cleaned.forEach(r => map.set(r.id, r));
-      reminders = [...map.values()];
-      saveAll();
-      showToast(`${cleaned.length} reminder(s) imported`);
-    } catch (_) {
-      alert("This file is not a valid Remindly JSON backup.");
-    } finally {
-      e.target.value = "";
-    }
-  });
-
-  function shareWhatsApp(r) {
-    const message = `🔔 Reminder: ${r.name}\n📅 ${formatDate(r)}${r.description ? `\n📝 ${r.description}` : ""}`;
-    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    // location.href is more dependable than popup windows on mobile Safari/Chrome.
-    window.location.href = url;
-  }
-
-  function googleCalendarUrl(r) {
-    const start = calendarStamp(parseReminder(r));
-    const end = calendarStamp(new Date(parseReminder(r).getTime() + 30 * 60000));
-    const params = new URLSearchParams({
-      action:"TEMPLATE",
-      text:r.name,
-      dates:`${start}/${end}`,
-      details:r.description || "Created with Remindly",
-      location:""
-    });
-    return `https://calendar.google.com/calendar/render?${params.toString()}`;
-  }
-
-  function calendarStamp(d) {
-    const pad = n => String(n).padStart(2,"0");
-    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
-  }
-
-  function addToCalendar(r) {
-    window.location.href = googleCalendarUrl(r);
-  }
-
-  function showToast(message) {
-    toast.textContent = message;
-    toast.classList.add("show");
-    clearTimeout(showToast.timer);
-    showToast.timer = setTimeout(() => toast.classList.remove("show"), 2200);
-  }
-
-  document.addEventListener("keydown", e => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-      e.preventDefault();
-      nameInput.focus();
-    }
-  });
-
-  resetForm();
+$('priority').addEventListener('click',()=>{
+  $('filter').value='7';
   render();
-})();
+  window.scrollTo({top:$('list').offsetTop-20,behavior:'smooth'});
+});
+
+$('backup').addEventListener('click',backup);
+
+$('import').addEventListener('change',e=>{
+  const f=e.target.files[0];
+  if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const x=JSON.parse(rd.result);
+      if(!Array.isArray(x))throw Error();
+      const clean=x.filter(r=>r&&r.name&&r.date).map(r=>({
+        id:r.id||uid(),
+        name:String(r.name),
+        description:String(r.description||''),
+        date:String(r.date)
+      }));
+      if(confirm('Replace current reminders with this backup?')){
+        data=clean;
+        save();
+      }
+    }catch{
+      alert('Invalid backup file.');
+    }
+    e.target.value='';
+  };
+  rd.readAsText(f);
+});
+
+$('bell').addEventListener('click',async()=>{
+  if(!('Notification' in window)){
+    alert('Browser notifications are not supported.');
+    return;
+  }
+  const p=await Notification.requestPermission();
+  if(p==='granted'){
+    new Notification('ReminderFlow',{body:'Browser notifications are enabled.'});
+  }
+});
+
+render();
